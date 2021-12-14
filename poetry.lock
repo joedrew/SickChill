@@ -41,11 +41,11 @@ pytz = ">=2015.7"
 
 [[package]]
 name = "babelfish"
-version = "0.5.5"
+version = "0.6.0"
 description = "A module to work with countries and languages"
 category = "main"
 optional = false
-python-versions = "*"
+python-versions = ">=3.6,<4.0"
 
 [[package]]
 name = "bandit"
@@ -512,7 +512,8 @@ optional = false
 python-versions = "*"
 
 [package.dependencies]
-babelfish = "*"
+babelfish = ">=0.6.0"
+importlib-resources = {version = "*", markers = "python_version < \"3.9\""}
 python-dateutil = "*"
 rebulk = ">=3"
 
@@ -1589,7 +1590,8 @@ babel = [
     {file = "Babel-2.9.0.tar.gz", hash = "sha256:da031ab54472314f210b0adcff1588ee5d1d1d0ba4dbd07b94dba82bde791e05"},
 ]
 babelfish = [
-    {file = "babelfish-0.5.5.tar.gz", hash = "sha256:8380879fa51164ac54a3e393f83c4551a275f03617f54a99d70151358e444104"},
+    {file = "babelfish-0.6.0-py3-none-any.whl", hash = "sha256:268f1c6279f2a04a66837972e8a9f3dcc68e16f1201eec57d2a4b828a8b41b11"},
+    {file = "babelfish-0.6.0.tar.gz", hash = "sha256:2dadfadd1b205ca5fa5dc9fa637f5b7933160a0418684c7c46a7a664033208a2"},
 ]
 bandit = [
     {file = "bandit-1.7.0-py3-none-any.whl", hash = "sha256:216be4d044209fa06cf2a3e51b319769a51be8318140659719aa7a115c35ed07"},
