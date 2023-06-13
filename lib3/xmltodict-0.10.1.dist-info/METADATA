@@ -23,7 +23,5 @@ Classifier: Programming Language :: Python :: 3.5
 Classifier: Programming Language :: Python :: Implementation :: Jython
 Classifier: Programming Language :: Python :: Implementation :: PyPy
 Classifier: Topic :: Text Processing :: Markup :: XML
-
-UNKNOWN
-
+License-File: LICENSE
 

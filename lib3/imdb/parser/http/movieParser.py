@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-# Copyright 2004-2020 Davide Alberani <da@erlug.linux.it>
+# Copyright 2004-2023 Davide Alberani <da@erlug.linux.it>
 #           2008-2018 H. Turgut Uyar <uyar@tekir.org>
 #
 # This program is free software; you can redistribute it and/or modify
@@ -38,15 +38,14 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import functools
 import re
 
-from imdb import PY2
-from imdb import imdbURL_base
+from imdb import PY2, imdbURL_base
 from imdb.Company import Company
 from imdb.Movie import Movie
 from imdb.Person import Person
-from imdb.utils import _Container, KIND_MAP
+from imdb.utils import KIND_MAP, _Container
 
 from .piculet import Path, Rule, Rules, preprocessors, transformers
-from .utils import DOMParserBase, analyze_imdbid, build_person, build_movie
+from .utils import DOMParserBase, analyze_imdbid, build_movie, build_person
 
 if PY2:
     from urllib import unquote
@@ -84,8 +83,11 @@ _SECT_CONV = {
     'creators': 'creator',
     'color': 'color info',
     'plot': 'plot outline',
+    'art director': 'art direction',
     'art directors': 'art direction',
+    'composers': 'composer',
     'assistant directors': 'assistant director',
+    'set decorator': 'set decoration',
     'set decorators': 'set decoration',
     'visual effects department': 'visual effects',
     'miscellaneous': 'miscellaneous crew',
@@ -94,6 +96,7 @@ _SECT_CONV = {
     'cinematographers': 'cinematographer',
     'camera department': 'camera and electrical department',
     'costume designers': 'costume designer',
+    'production designer': 'production design',
     'production designers': 'production design',
     'production managers': 'production manager',
     'music original': 'original music',
@@ -101,10 +104,17 @@ _SECT_CONV = {
     'other companies': 'miscellaneous companies',
     'producers': 'producer',
     'special effects by': 'special effects department',
-    'special effects': 'special effects companies'
 }
 
 re_space = re.compile(r'\s+')
+
+
+def clean_section_name(section):
+    """Clean and replace some section names."""
+    section = re_space.sub(' ', section.replace('_', ' ').strip().lower())
+    if section.endswith(' by'):
+        section = section[:-3]
+    return _SECT_CONV.get(section, section)
 
 
 def _manageRoles(mo):
@@ -172,8 +182,16 @@ _re_og_title = re.compile(
 )
 
 
+def special_kind(og_title):
+    specialKind = re.compile(r"\n(.*)").findall(og_title)
+    if len(specialKind):
+        return specialKind[0].strip()
+    return None
+
+
 def analyze_og_title(og_title):
     data = {}
+    og_kind = special_kind(og_title)
     match = _re_og_title.match(og_title)
     if og_title and not match:
         # assume it's a title in production, missing release date information
@@ -183,7 +201,10 @@ def analyze_og_title(og_title):
         data['year'] = int(match.group(3))
     kind = match.group(2) or match.group(6)
     if kind is None:
-        kind = 'movie'
+        if og_kind is None:
+            kind = 'movie'
+        else:
+            kind = og_kind.lower()
     else:
         kind = kind.lower()
         kind = KIND_MAP.get(kind, kind)
@@ -250,13 +271,24 @@ class DOMHTMLMovieParser(DOMParserBase):
     rules = [
         Rule(
             key='title',
-            extractor=Path('//meta[@property="og:title"]/@content',
+            extractor=Path('//meta[@property="og:title"]/@content|//*[@id="main"]/section/div/div/ul[1]/li[5]/text()',
                            transform=analyze_og_title)
         ),
         Rule(
             key='original title',
-            extractor=Path('//div[@class="titlereference-header"]//h3[@itemprop="name"]//text()',
+            extractor=Path('//div[@class="titlereference-header"]//span[@class="titlereference-original-title-label"]/preceding-sibling::text()',  # noqa: E501
                            transform=lambda x: re_space.sub(' ', x).strip())
+
+        ),
+        Rule(
+            key='original title title-year',
+            extractor=Path('//div[@class="titlereference-header"]//span[@class="titlereference-title-year"]/preceding-sibling::text()',  # noqa: E501
+                           transform=lambda x: re_space.sub(' ', x).strip())
+        ),
+        Rule(
+            key='localized title',
+            extractor=Path('//meta[@name="title"]/@content',
+                           transform=lambda x: analyze_og_title(x).get('title'))
         ),
 
         # parser for misc sections like 'casting department', 'stunts', ...
@@ -266,7 +298,7 @@ class DOMHTMLMovieParser(DOMParserBase):
                 foreach='//h4[contains(@class, "ipl-header__content")]',
                 rules=[
                     Rule(
-                        key=Path('./@name', transform=lambda x: x.replace('_', ' ').strip()),
+                        key=Path('./@name', transform=clean_section_name),
                         extractor=Rules(
                             foreach='../../following-sibling::table[1]//tr',
                             rules=[
@@ -316,7 +348,7 @@ class DOMHTMLMovieParser(DOMParserBase):
         Rule(
             key='recommendations',
             extractor=Rules(
-                foreach='//div[@class="rec_overview"]',
+                foreach='//div[contains(@class, "rec_item")]',
                 rules=[
                     Rule(
                         key='movieID',
@@ -328,7 +360,7 @@ class DOMHTMLMovieParser(DOMParserBase):
                     Rule(
                         key='title',
                         extractor=Path(
-                            './/div[@class="rec-title"]//text()',
+                            './/a//img/@title',
                             transform=lambda x: re_space.sub(' ', x or '').strip()
                         )
                     ),
@@ -451,7 +483,7 @@ class DOMHTMLMovieParser(DOMParserBase):
         Rule(
             key='creator',
             extractor=Rules(
-                foreach='//td[starts-with(text(), "Creator")]/..//a',
+                foreach='//div[starts-with(normalize-space(text()), "Creator")]/ul/li[1]/a',
                 rules=[
                     Rule(
                         key='name',
@@ -578,18 +610,17 @@ class DOMHTMLMovieParser(DOMParserBase):
             extractor=Path(
                 foreach='//i[@class="transl"]',
                 path='./text()',
-                transform=lambda x: x
-                    .replace('  ', ' ')
-                    .rstrip('-')
-                    .replace('" - ', '"::', 1)
-                    .strip('"')
-                    .replace('  ', ' ')
+                transform=lambda x: x.replace('  ', ' ')
+                                     .rstrip('-')
+                                     .replace('" - ', '"::', 1)
+                                     .strip('"')
+                                     .replace('  ', ' ')
             )
         ),
         Rule(
             key='production status',
             extractor=Path(
-                '//td[starts-with(text(), "Status:")]/..//div[@class="info-content"]//text()',
+                '//td[starts-with(text(), "Status:")]/../td[2]/text()',
                 transform=lambda x: x.strip().split('|')[0].strip().lower()
             )
         ),
@@ -597,7 +628,7 @@ class DOMHTMLMovieParser(DOMParserBase):
             key='production status updated',
             extractor=Path(
                 '//td[starts-with(text(), "Status Updated:")]/'
-                '..//div[@class="info-content"]//text()',
+                '..//td[2]/text()',
                 transform=transformers.strip
             )
         ),
@@ -605,7 +636,7 @@ class DOMHTMLMovieParser(DOMParserBase):
             key='production comments',
             extractor=Path(
                 '//td[starts-with(text(), "Comments:")]/'
-                '..//div[@class="info-content"]//text()',
+                '..//td[2]/text()',
                 transform=transformers.strip
             )
         ),
@@ -613,7 +644,7 @@ class DOMHTMLMovieParser(DOMParserBase):
             key='production note',
             extractor=Path(
                 '//td[starts-with(text(), "Note:")]/'
-                '..//div[@class="info-content"]//text()',
+                '..//td[2]/text()',
                 transform=transformers.strip
             )
         ),
@@ -667,6 +698,11 @@ class DOMHTMLMovieParser(DOMParserBase):
             key='imdbID',
             extractor=Path('//meta[@property="pageId"]/@content',
                            transform=lambda x: (x or '').replace('tt', ''))
+        ),
+        Rule(
+            key='videos',
+            extractor=Path(foreach='//div[@class="mediastrip_big"]//a',
+                           path='./@href', transform=lambda x: 'http://www.imdb.com' + x)
         )
     ]
 
@@ -707,7 +743,6 @@ class DOMHTMLMovieParser(DOMParserBase):
             if sect in _SECT_CONV:
                 data[_SECT_CONV[sect]] = data[sect]
                 del data[sect]
-                sect = _SECT_CONV[sect]
         # Filter out fake values.
         for key in data:
             value = data[key]
@@ -723,6 +758,12 @@ class DOMHTMLMovieParser(DOMParserBase):
                 subdata = data[key]
                 del data[key]
                 data.update(subdata)
+        if not data.get('original title'):
+            if 'original title title-year' in data:
+                data['original title'] = data['original title title-year']
+                del data['original title title-year']
+        elif 'original title title-year' in data:
+            del data['original title title-year']
         misc_sections = data.get('misc sections')
         if misc_sections is not None:
             for section in misc_sections:
@@ -796,7 +837,7 @@ class DOMHTMLMovieParser(DOMParserBase):
             del data['tv series link']
         if 'rating' in data:
             try:
-                data['rating'] = float(data['rating'].replace('/10', ''))
+                data['rating'] = float(data['rating'].replace('/10', '').replace(',', '.'))
             except (TypeError, ValueError):
                 pass
             if data['rating'] == 0:
@@ -849,16 +890,12 @@ class DOMHTMLPlotParser(DOMParserBase):
         Rule(
             key='plot',
             extractor=Rules(
-                foreach='//ul[@id="plot-summaries-content"]/li',
+                foreach='//div[@data-testid="sub-section-summaries"]//li',
                 rules=[
                     Rule(
                         key='plot',
-                        extractor=Path('./p//text()')
+                        extractor=Path('.//text()')
                     ),
-                    Rule(
-                        key='author',
-                        extractor=Path('.//div[@class="author-container"]//a/text()')
-                    )
                 ],
                 transform=_process_plotsummary
             )
@@ -866,8 +903,8 @@ class DOMHTMLPlotParser(DOMParserBase):
         Rule(
             key='synopsis',
             extractor=Path(
-                foreach='//ul[@id="plot-synopsis-content"]',
-                path='.//li//text()'
+                foreach='//div[@data-testid="sub-section-synopsis"]//li',
+                path='.//text()'
             )
         )
     ]
@@ -962,20 +999,20 @@ class DOMHTMLAwardsParser(DOMParserBase):
             key='recipients',
             extractor=Rules(
                 foreach='//*[@id="main"]/div[1]/div/table//tr/td[2]/a',
-                            rules=[
-                                Rule(
-                                    key='name',
-                                    extractor=Path('./text()')
-                                ),
-                                Rule(
-                                    key='link',
-                                    extractor=Path('./@href')
-                                ),
-                                Rule(
-                                    key='anchor',
-                                    extractor=Path('./ancestor::tr//text()')
-                                )
-                            ]
+                rules=[
+                    Rule(
+                        key='name',
+                        extractor=Path('./text()')
+                    ),
+                    Rule(
+                        key='link',
+                        extractor=Path('./@href')
+                    ),
+                    Rule(
+                        key='anchor',
+                        extractor=Path('./ancestor::tr//text()')
+                    )
+                ]
             )
         )
     ]
@@ -1033,7 +1070,6 @@ class DOMHTMLAwardsParser(DOMParserBase):
         return {'awards': nd}
 
 
-
 class DOMHTMLTaglinesParser(DOMParserBase):
     """Parser for the "taglines" page of a given movie.
     The page should be provided as a string, as taken from
@@ -1049,16 +1085,11 @@ class DOMHTMLTaglinesParser(DOMParserBase):
         Rule(
             key='taglines',
             extractor=Path(
-                foreach='//div[@id="taglines_content"]/div',
+                foreach='//div[@class="ipc-html-content-inner-div"]',
                 path='.//text()'
             )
         )
     ]
-
-    def preprocess_dom(self, dom):
-        preprocessors.remove(dom, '//div[@id="taglines_content"]/div[@class="header"]')
-        preprocessors.remove(dom, '//div[@id="taglines_content"]/div[@id="no_content"]')
-        return dom
 
     def postprocess_data(self, data):
         if 'taglines' in data:
@@ -1085,8 +1116,49 @@ class DOMHTMLKeywordsParser(DOMParserBase):
                 path='./@data-item-keyword',
                 transform=lambda x: x.lower().replace(' ', '-')
             )
+        ),
+        Rule(
+            key='relevant keywords',
+            extractor=Rules(
+                foreach='//td[@data-item-keyword]',
+                rules=[
+                    Rule(
+                        key='keyword',
+                        extractor=Path('./@data-item-keyword')
+                    ),
+                    Rule(
+                        key='ordering',
+                        extractor=Path('./@data-item-votes')
+                    ),
+                    Rule(
+                        key='vote_str',
+                        extractor=Path('./div[2]/div//text()')
+                    )
+                ],
+                transform=lambda x: {
+                    'keyword': x.get('keyword').lower(),
+                    'keyword_dash': x.get('keyword').lower().replace(' ', '-'),
+                    'ordering': x.get('ordering'),
+                    'votes_str': x.get('vote_str').strip().lower()
+                }
+            )
         )
     ]
+
+    def postprocess_data(self, data):
+        if 'relevant keywords' in data:
+            rk = []
+            for x in data['relevant keywords']:
+                if 'votes_str' in x:
+                    if 'is this relevant?' in x['votes_str']:
+                        x['votes_for'] = 0
+                        x['total_votes'] = 0
+                    else:
+                        x['votes_for'] = x['votes_str'].split('of')[0].strip()
+                        x['total_votes'] = re.sub(r"\D", "", x['votes_str'].split('of')[1]).strip()
+                    rk.append(x)
+            data['relevant keywords'] = rk
+        return data
 
 
 class DOMHTMLAlternateVersionsParser(DOMParserBase):
@@ -1297,11 +1369,10 @@ class DOMHTMLQuotesParser(DOMParserBase):
             extractor=Path(
                 foreach='//div[@class="sodatext"]',
                 path='.//text()',
-                transform=lambda x: x
-                    .strip()
-                    .replace(' \n', '::')
-                    .replace('::\n', '::')
-                    .replace('\n', ' ')
+                transform=lambda x: x.strip()
+                                     .replace(' \n', '::')
+                                     .replace('::\n', '::')
+                                     .replace('\n', ' ')
             )
         )
     ]
@@ -1338,6 +1409,10 @@ class DOMHTMLReleaseinfoParser(DOMParserBase):
                     Rule(
                         key='country',
                         extractor=Path('.//td[1]//text()')
+                    ),
+                    Rule(
+                        key='country_code',
+                        extractor=Path('.//td[1]/a/@href')
                     ),
                     Rule(
                         key='date',
@@ -1395,6 +1470,8 @@ class DOMHTMLReleaseinfoParser(DOMParserBase):
                 info += notes
             rl.append(info)
         if releases:
+            for rd in data['release dates']:
+                rd['country_code'] = rd['country_code'].split('region=')[1].split('&')[0].strip().upper()
             data['raw release dates'] = data['release dates']
             del data['release dates']
         if rl:
@@ -1412,6 +1489,12 @@ class DOMHTMLReleaseinfoParser(DOMParserBase):
                 for country in countries:
                     nakas.append('%s %s' % (title, country.strip()))
         if akas:
+            if releases:
+                for rd in data['raw release dates']:
+                    for a in data['akas']:
+                        if 'countries' in a:
+                            if rd['country'].strip() in a['countries'].strip():
+                                a['country_code'] = rd['country_code']
             data['raw akas'] = data['akas']
             del data['akas']
         if nakas:
@@ -1430,7 +1513,7 @@ class DOMHTMLRatingsParser(DOMParserBase):
         rparser = DOMHTMLRatingsParser()
         result = rparser.parse(userratings_html_string)
     """
-    re_means = re.compile('mean\s*=\s*([0-9]\.[0-9])\s*median\s*=\s*([0-9])', re.I)
+    re_means = re.compile(r'mean\s*=\s*([0-9]\.[0-9])\s*median\s*=\s*([0-9])', re.I)
 
     rules = [
         Rule(
@@ -1596,11 +1679,11 @@ class DOMHTMLReviewsParser(DOMParserBase):
                     ),
                     Rule(
                         key='helpful',
-                        extractor=Path('.//div[@class="text-muted"]/text()[1]')
+                        extractor=Path('.//div[@class="actions text-muted"]//text()[1]')
                     ),
                     Rule(
                         key='title',
-                        extractor=Path('.//div[@class="title"]//text()')
+                        extractor=Path('.//a[@class="title"]//text()')
                     ),
                     Rule(
                         key='author',
@@ -1631,8 +1714,13 @@ class DOMHTMLReviewsParser(DOMParserBase):
 
     def postprocess_data(self, data):
         for review in data.get('reviews', []):
-            if review.get('rating') and len(review['rating']) == 2:
-                review['rating'] = int(review['rating'][0])
+            if review.get('rating'):
+                if isinstance(review['rating'], str):
+                    review['rating'] = int(review['rating'])
+                elif len(review['rating']) == 2:  # May be legacy code.
+                    review['rating'] = int(review['rating'][0])
+                else:
+                    review['rating'] = None
             else:
                 review['rating'] = None
 
@@ -1691,7 +1779,36 @@ class DOMHTMLFullCreditsParser(DOMParserBase):
                     headshot=(x.get('headshot', ''))
                 )
             )
-        )
+        ),
+        # parser for misc sections like 'casting department', 'stunts', ...
+        Rule(
+            key='misc sections',
+            extractor=Rules(
+                foreach='//h4[contains(@class, "dataHeaderWithBorder")]',
+                rules=[
+                    Rule(
+                        key=Path('./@name', transform=clean_section_name),
+                        extractor=Rules(
+                            foreach='./following-sibling::table[1]//tr',
+                            rules=[
+                                Rule(
+                                    key='person',
+                                    extractor=Path('.//text()')
+                                ),
+                                Rule(
+                                    key='link',
+                                    extractor=Path('./td[1]/a[@href]/@href')
+                                )
+                            ],
+                            transform=lambda x: build_person(
+                                x.get('person') or '',
+                                personID=analyze_imdbid(x.get('link'))
+                            )
+                        )
+                    )
+                ]
+            )
+        ),
     ]
 
     preprocessors = [
@@ -1699,12 +1816,24 @@ class DOMHTMLFullCreditsParser(DOMParserBase):
     ]
 
     def postprocess_data(self, data):
+        # Convert section names.
         clean_cast = []
         for person in data.get('cast', []):
             if person.personID and person.get('name'):
                 clean_cast.append(person)
         if clean_cast:
             data['cast'] = clean_cast
+        misc_sections = data.get('misc sections')
+        if misc_sections is not None:
+            for section in misc_sections:
+                for sectName, sectData in section.items():
+                    # skip sections with their own parsers
+                    if sectName in ('cast',):
+                        continue
+                    newName = _SECT_CONV.get(sectName, sectName)
+                    if sectData:
+                        data[newName] = sectData
+            del data['misc sections']
         return data
 
 
@@ -1723,13 +1852,13 @@ class DOMHTMLOfficialsitesParser(DOMParserBase):
     """
     rules = [
         Rule(
-            foreach='//h4[@class="li_group"]',
+            foreach='//div[contains(@class, "ipc-page-grid__item")]/section[contains(@class, "ipc-page-section--base")]',
             key=Path(
-                './text()',
+                './/h3//text()',
                 transform=lambda x: x.strip().lower()
             ),
             extractor=Rules(
-                foreach='./following::ul[1]/li/a',
+                foreach='.//ul[1]//li//a[1]',
                 rules=[
                     Rule(
                         key='link',
@@ -1737,83 +1866,74 @@ class DOMHTMLOfficialsitesParser(DOMParserBase):
                     ),
                     Rule(
                         key='info',
-                        extractor=Path('./text()')
+                        extractor=Path('.//text()')
                     )
                 ],
                 transform=lambda x: (
-                    x.get('info').strip(),
-                    unquote(_normalize_href(x.get('link')))
+                    x.get('info', '').strip(),
+                    unquote(x.get('link'))
                 )
             )
         )
     ]
 
 
-class DOMHTMLConnectionParser(DOMParserBase):
-    """Parser for the "connections" page of a given movie.
+class DOMHTMLConnectionsParser(DOMParserBase):
+    """Parser for the "connections" pages of a given movie.
     The page should be provided as a string, as taken from
     the www.imdb.com server.  The final result will be a
     dictionary, with a key for every relevant section.
 
     Example::
 
-        connparser = DOMHTMLConnectionParser()
-        result = connparser.parse(connections_html_string)
+        osparser = DOMHTMLOfficialsitesParser()
+        result = osparser.parse(officialsites_html_string)
     """
-    _containsObjects = True
-
     rules = [
         Rule(
-            key='connection',
+            foreach='//div[contains(@class, "ipc-page-grid__item")]/section[contains(@class, "ipc-page-section--base")]',
+            key=Path(
+                './div[1]//h3//text()',
+                transform=lambda x: (x or '').strip().lower()
+            ),
             extractor=Rules(
-                foreach='//div[@class="_imdbpy"]',
+                foreach='./div[2]//ul[1]//li',
                 rules=[
                     Rule(
-                        key=Path('./h5/text()', transform=transformers.lower),
-                        extractor=Rules(
-                            foreach='./a',
-                            rules=[
-                                Rule(
-                                    key='title',
-                                    extractor=Path('./text()')
-                                ),
-                                Rule(
-                                    key='movieID',
-                                    extractor=Path('./@href')
-                                )
-                            ]
-                        )
+                        key='link',
+                        extractor=Path('./div[1]//p//a/@href')
+                    ),
+                    Rule(
+                        key='info',
+                        extractor=Path('./div[1]//p//text()')
                     )
-                ]
+                ],
+                transform=lambda x: (
+                    x.get('info', '').strip(),
+                    unquote(_normalize_href(x.get('link', '')))
+                )
             )
         )
     ]
 
-    preprocessors = [
-        ('<h5>', '</div><div class="_imdbpy"><h5>'),
-        # To get the movie's year.
-        ('</a> (', ' ('),
-        ('\n<br/>', '</a>'),
-        ('<br/> - ', '::')
-    ]
-
     def postprocess_data(self, data):
-        for key in list(data.keys()):
-            nl = []
-            for v in data[key]:
-                title = v['title']
-                ts = title.split('::', 1)
-                title = ts[0].strip()
-                notes = ''
-                if len(ts) == 2:
-                    notes = ts[1].strip()
-                m = Movie(title=title, movieID=analyze_imdbid(v['movieID']),
-                          accessSystem=self._as, notes=notes, modFunct=self._modFunct)
-                nl.append(m)
-            data[key] = nl
-        if not data:
-            return {}
-        return {'connections': data}
+        connections = {}
+        for k, v in data.items():
+            k = k.strip()
+            if not (k and v):
+                continue
+            movies = []
+            for title, link in v:
+                title = title.strip().replace('\n', '')
+                movieID = analyze_imdbid(link)
+                if not (title and movieID):
+                    continue
+                movie = Movie(title=title, movieID=movieID,
+                              accessSystem=self._as, modFunct=self._modFunct)
+                movies.append(movie)
+            if movies:
+                connections[k] = movies
+        return {'connections': connections}
 
 
 class DOMHTMLLocationsParser(DOMParserBase):
@@ -1892,7 +2012,7 @@ class DOMHTMLTechParser(DOMParserBase):
         (re.compile('<p>(.*?)</p>', re.I), r'\1<br/>'),
         (re.compile('(</td><td valign="top">)', re.I), r'\1::'),
         (re.compile('(</tr><tr>)', re.I), r'\n\1'),
-        (re.compile('<span class="ghost">\|</span>', re.I), r':::'),
+        (re.compile(r'<span class="ghost">\|</span>', re.I), r':::'),
         (re.compile('<br/?>', re.I), r':::')
         # this is for splitting individual entries
     ]
@@ -2479,36 +2599,113 @@ class DOMHTMLParentsGuideParser(DOMParserBase):
     """
     rules = [
         Rule(
-            key='parents guide',
+            key='mpaa',
+            extractor=Path(
+                '//tr[@id="mpaa-rating"]/td[2]//text()'
+            )
+        ),
+        Rule(
+            key='certificates',
             extractor=Rules(
-                foreach='//tr[@class="ipl-zebra-list__item"]',
+                foreach='//tr[@id="certifications-list"]//li',
                 rules=[
                     Rule(
-                        key=Path(
-                            './td[1]/text()',
-                            transform=transformers.lower
-                        ),
-                        extractor=Path(
-                            path='./td[2]//text()',
-                            transform=lambda x: [
-                                re_space.sub(' ', t)
-                                for t in x.split('\n') if t.strip()
-                            ]
+                        key='full',
+                        extractor=Path('./a//text()')
+                    ),
+                    Rule(
+                        key='country_code',
+                        extractor=Path('./a/@href')
+                    ),
+                    Rule(
+                        key='note',
+                        extractor=Path('./text()')
+                    ),
+
+                ],
+                transform=lambda x: {
+                    'country_code': x.get('country_code').split('certificates=')[1].split(':')[0].strip(),
+                    'country': x.get('full').split(':')[0].strip(),
+                    'certificate': x.get('full').split(':')[1].strip(),
+                    'note': x.get('note').strip(),
+                    'full': x.get('full').strip(),
+                }
+            )
+        ),
+        Rule(
+            key='advisories',
+            extractor=Rules(
+                foreach='//section[starts-with(@id, "advisory-")]',
+                rules=[
+                    Rule(
+                        key='section',
+                        extractor=Path('./@id')
+                    ),
+                    Rule(
+                        key='items',
+                        extractor=Rules(
+                            foreach='.//li',
+                            rules=[
+                                Rule(
+                                    key='item',
+                                    extractor=Path('./text()')
+                                )
+                            ],
+                            transform=lambda x: x.get('item').strip()
                         )
                     )
+                ]
+            )
+        ),
+        Rule(
+            key='advisory votes',
+            extractor=Rules(
+                foreach='//section[starts-with(@id, "advisory-")][not(contains(@id, "advisory-spoiler"))]',
+                rules=[
+                    Rule(key='section',
+                         extractor=Path('./@id'),
+                         ),
+                    Rule(key='status',
+                         extractor=Path('.//li[1]//div[contains(@class, "ipl-swapper__content-primary")]//span/text()')
+                         ),
+                    Rule(key='votes',
+                         extractor=Path(
+                             foreach='.//li[1]//span[contains(@class, "ipl-vote-button__details")]',
+                             path='./text()',
+                             transform=lambda x: int(x.replace(',', ''))
+                         )
+                         )
                 ]
             )
         )
     ]
 
     def postprocess_data(self, data):
-        ret = {}
-        for sect in data.get('parents guide', []):
-            for key, value in sect.items():
-                ret[key] = value
-        if isinstance(ret.get('mpaa'), list):
-            ret['mpaa'] = ret['mpaa'][0]
-        return ret
+        if 'advisories' in data:
+            for advisory in data['advisories']:
+                sect = advisory.get('section', '').replace('-', ' ')
+                items = [x for x in advisory.get('items', []) if x]
+                if sect and items:
+                    data[sect] = items
+            del data['advisories']
+
+        if 'advisory votes' in data:
+            advisory_votes = {}
+            for vote in data['advisory votes']:
+                if 'status' not in vote or 'votes' not in vote:
+                    continue
+                advisory_votes[vote['section'][9:]] = {
+                    'votes': {
+                        'None': vote['votes'][0],
+                        'Mild': vote['votes'][1],
+                        'Moderate': vote['votes'][2],
+                        'Severe': vote['votes'][3],
+                    },
+                    'status': vote['status'],
+                }
+            data['advisory votes'] = advisory_votes
+
+        return data
 
 
 _OBJECTS = {
@@ -2535,7 +2732,7 @@ _OBJECTS = {
     'soundclips_parser': ((DOMHTMLOfficialsitesParser,), None),
     'videoclips_parser': ((DOMHTMLOfficialsitesParser,), None),
     'photosites_parser': ((DOMHTMLOfficialsitesParser,), None),
-    'connections_parser': ((DOMHTMLConnectionParser,), None),
+    'connections_parser': ((DOMHTMLConnectionsParser,), None),
     'tech_parser': ((DOMHTMLTechParser,), None),
     'locations_parser': ((DOMHTMLLocationsParser,), None),
     'news_parser': ((DOMHTMLNewsParser,), None),

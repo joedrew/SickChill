@@ -48,7 +48,10 @@ import tempfile
 import textwrap
 
 import fixtures
-import mock
+try:
+    from unittest import mock
+except ImportError:
+    import mock
 import pkg_resources
 import six
 import testscenarios
@@ -135,7 +138,6 @@ class GPGKeyFixture(fixtures.Fixture):
             Name-Comment: N/A
             Name-Email: example@example.com
             Expire-Date: 2d
-            Preferences: (setpref)
             %commit
             """)
 
@@ -173,11 +175,10 @@ class Venv(fixtures.Fixture):
         """
         self._reason = reason
         if modules == ():
-            pbr = 'file://%s#egg=pbr' % PBR_ROOT
-            modules = ['pip', 'wheel', pbr]
+            modules = ['pip', 'wheel', 'build', PBR_ROOT]
         self.modules = modules
         if pip_cmd is None:
-            self.pip_cmd = ['-m', 'pip', 'install']
+            self.pip_cmd = ['-m', 'pip', '-v', 'install']
         else:
             self.pip_cmd = pip_cmd
 
@@ -379,6 +380,12 @@ class TestPackagingWheels(base.BaseTestCase):
         # Extract the wheel contents to the directory we just created
         wheel_file.extractall(self.extracted_wheel_dir)
         wheel_file.close()
+
+    def test_metadata_directory_has_pbr_json(self):
+        # Build the path to the scripts directory
+        pbr_json = os.path.join(
+            self.extracted_wheel_dir, 'pbr_testpackage-0.0.dist-info/pbr.json')
+        self.assertTrue(os.path.exists(pbr_json))
 
     def test_data_directory_has_wsgi_scripts(self):
         # Build the path to the scripts directory
@@ -665,6 +672,53 @@ class TestVersions(base.BaseTestCase):
         version = packaging._get_version_from_git()
         self.assertThat(version, matchers.StartsWith('2.0.0.dev1'))
 
+    def test_multi_inline_symbols_no_space(self):
+        self.repo.commit()
+        self.repo.tag('1.2.3')
+        self.repo.commit('Sem-ver: feature,api-break')
+        version = packaging._get_version_from_git()
+        self.assertThat(version, matchers.StartsWith('2.0.0.dev1'))
+
+    def test_multi_inline_symbols_spaced(self):
+        self.repo.commit()
+        self.repo.tag('1.2.3')
+        self.repo.commit('Sem-ver: feature, api-break')
+        version = packaging._get_version_from_git()
+        self.assertThat(version, matchers.StartsWith('2.0.0.dev1'))
+
+    def test_multi_inline_symbols_reversed(self):
+        self.repo.commit()
+        self.repo.tag('1.2.3')
+        self.repo.commit('Sem-ver: api-break,feature')
+        version = packaging._get_version_from_git()
+        self.assertThat(version, matchers.StartsWith('2.0.0.dev1'))
+
+    def test_leading_space(self):
+        self.repo.commit()
+        self.repo.tag('1.2.3')
+        self.repo.commit('   sem-ver: api-break')
+        version = packaging._get_version_from_git()
+        self.assertThat(version, matchers.StartsWith('2.0.0.dev1'))
+
+    def test_leading_space_multiline(self):
+        self.repo.commit()
+        self.repo.tag('1.2.3')
+        self.repo.commit(
+            (
+                '   Some cool text\n'
+                '   sem-ver: api-break'
+            )
+        )
+        version = packaging._get_version_from_git()
+        self.assertThat(version, matchers.StartsWith('2.0.0.dev1'))
+
+    def test_leading_characters_symbol_not_found(self):
+        self.repo.commit()
+        self.repo.tag('1.2.3')
+        self.repo.commit('  ssem-ver: api-break')
+        version = packaging._get_version_from_git()
+        self.assertThat(version, matchers.StartsWith('1.2.4.dev1'))
+
     def test_tagged_version_has_tag_version(self):
         self.repo.commit()
         self.repo.tag('1.2.3')
@@ -919,6 +973,62 @@ class TestRequirementParsing(base.BaseTestCase):
                 for s in generated_requirements[section]
             ]
             self.assertEqual(exp_parsed, gen_parsed)
+
+
+class TestPEP517Support(base.BaseTestCase):
+    def test_pep_517_support(self):
+        # Note that the current PBR PEP517 entrypoints rely on a valid
+        # PBR setup.py existing.
+        pkgs = {
+            'test_pep517':
+                {
+                    'requirements.txt': textwrap.dedent("""\
+                        sphinx
+                        iso8601
+                    """),
+                    # Override default setup.py to remove setup_requires.
+                    'setup.py': textwrap.dedent("""\
+                        #!/usr/bin/env python
+                        import setuptools
+                        setuptools.setup(pbr=True)
+                    """),
+                    'setup.cfg': textwrap.dedent("""\
+                        [metadata]
+                        name = test_pep517
+                        summary = A tiny test project
+                        author = PBR Team
+                        author-email = foo@example.com
+                        home-page = https://example.com/
+                        classifier =
+                            Intended Audience :: Information Technology
+                            Intended Audience :: System Administrators
+                            License :: OSI Approved :: Apache Software License
+                            Operating System :: POSIX :: Linux
+                            Programming Language :: Python
+                            Programming Language :: Python :: 2
+                            Programming Language :: Python :: 2.7
+                            Programming Language :: Python :: 3
+                            Programming Language :: Python :: 3.6
+                            Programming Language :: Python :: 3.7
+                            Programming Language :: Python :: 3.8
+                    """),
+                    'pyproject.toml': textwrap.dedent("""\
+                        [build-system]
+                        requires = ["pbr", "setuptools>=36.6.0", "wheel"]
+                        build-backend = "pbr.build"
+                    """)},
+        }
+        pkg_dirs = self.useFixture(CreatePackages(pkgs)).package_dirs
+        pkg_dir = pkg_dirs['test_pep517']
+        venv = self.useFixture(Venv('PEP517'))
+
+        # Test building sdists and wheels works. Note we do not use pip here
+        # because pip will forcefully install the latest version of PBR on
+        # pypi to satisfy the build-system requires. This means we can't self
+        # test changes using pip. Build with --no-isolation appears to avoid
+        # this problem.
+        self._run_cmd(venv.python, ('-m', 'build', '--no-isolation', '.'),
+                      allow_fail=False, cwd=pkg_dir)
 
 
 class TestRepositoryURLDependencies(base.BaseTestCase):

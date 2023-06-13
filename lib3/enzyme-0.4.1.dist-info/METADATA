@@ -7,7 +7,6 @@ Author: Antoine Bertin
 Author-email: diaoulael@gmail.com
 License: Apache 2.0
 Keywords: parser video metadata mkv
-Platform: UNKNOWN
 Classifier: Development Status :: 5 - Production/Stable
 Classifier: Intended Audience :: Developers
 Classifier: License :: OSI Approved :: Apache Software License
@@ -19,6 +18,7 @@ Classifier: Programming Language :: Python :: 3
 Classifier: Programming Language :: Python :: 3.3
 Classifier: Topic :: Multimedia :: Video
 Classifier: Topic :: Software Development :: Libraries :: Python Modules
+License-File: LICENSE
 
 Enzyme
 ======
@@ -82,5 +82,3 @@ Changelog
 **release date:** 2013-05-18
 
 * Complete refactoring, for the old enzyme see https://github.com/Diaoul/enzyme-old
-
-

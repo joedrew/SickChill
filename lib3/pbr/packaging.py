@@ -433,7 +433,11 @@ def generate_script(group, entry_point, header, template):
 def override_get_script_args(
         dist, executable=os.path.normpath(sys.executable)):
     """Override entrypoints console_script."""
-    header = easy_install.get_script_header("", executable)
+    # get_script_header() is deprecated since Setuptools 12.0
+    try:
+        header = easy_install.ScriptWriter.get_header("", executable)
+    except AttributeError:
+        header = easy_install.get_script_header("", executable)
     for group, template in ENTRY_POINTS_MAP.items():
         for name, ep in dist.get_entry_map(group).items():
             yield (name, generate_script(group, ep, header, template))
@@ -577,8 +581,9 @@ class LocalEggInfo(egg_info.egg_info):
         else:
             log.info("[pbr] Reusing existing SOURCES.txt")
             self.filelist = egg_info.FileList()
-            for entry in open(manifest_filename, 'r').read().split('\n'):
-                self.filelist.append(entry)
+            with open(manifest_filename, 'r') as fil:
+                for entry in fil.read().split('\n'):
+                    self.filelist.append(entry)
 
 
 def _from_git(distribution):
@@ -687,12 +692,14 @@ def _get_increment_kwargs(git_dir, tag):
     # git log output affecting out ability to have working sem ver headers.
     changelog = git._run_git_command(['log', '--pretty=%B', version_spec],
                                      git_dir)
-    header_len = len('sem-ver:')
-    commands = [line[header_len:].strip() for line in changelog.split('\n')
-                if line.lower().startswith('sem-ver:')]
     symbols = set()
-    for command in commands:
-        symbols.update([symbol.strip() for symbol in command.split(',')])
+    header = 'sem-ver:'
+    for line in changelog.split("\n"):
+        line = line.lower().strip()
+        if not line.lower().strip().startswith(header):
+            continue
+        new_symbols = line[len(header):].strip().split(",")
+        symbols.update([symbol.strip() for symbol in new_symbols])
 
     def _handle_symbol(symbol, symbols, impact):
         if symbol in symbols:
@@ -819,12 +826,9 @@ def _get_version_from_pkg_metadata(package_name):
     pkg_metadata = {}
     for filename in pkg_metadata_filenames:
         try:
-            pkg_metadata_file = open(filename, 'r')
-        except (IOError, OSError):
-            continue
-        try:
-            pkg_metadata = email.message_from_file(pkg_metadata_file)
-        except email.errors.MessageError:
+            with open(filename, 'r') as pkg_metadata_file:
+                pkg_metadata = email.message_from_file(pkg_metadata_file)
+        except (IOError, OSError, email.errors.MessageError):
             continue
 
     # Check to make sure we're in our own dir

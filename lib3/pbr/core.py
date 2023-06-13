@@ -81,6 +81,15 @@ def pbr(dist, attr, value):
     not work well with distributions that do use a `Distribution` subclass.
     """
 
+    # Distribution.finalize_options() is what calls this method. That means
+    # there is potential for recursion here. Recursion seems to be an issue
+    # particularly when using PEP517 build-system configs without
+    # setup_requires in setup.py. We can avoid the recursion by setting
+    # this canary so we don't repeat ourselves.
+    if hasattr(dist, '_pbr_initialized'):
+        return
+    dist._pbr_initialized = True
+
     if not value:
         return
     if isinstance(value, string_type):

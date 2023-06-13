@@ -3,12 +3,11 @@ Name: tvdbsimple
 Version: 1.0.6
 Summary: A Python wrapper for TheTVDb Database API v2
 Home-page: https://github.com/phate89/tvdbsimple
+Download-URL: https://github.com/phate89/tvdbsimple/tarball/1.0.6
 Author: phate89
 Author-email: phates89@gmail.com
 License: GPLv3
-Download-URL: https://github.com/phate89/tvdbsimple/tarball/1.0.6
 Keywords: show series seasons tv database tvdb wrapper thetvdb api
-Platform: UNKNOWN
 Classifier: Development Status :: 5 - Production/Stable
 Classifier: Intended Audience :: Developers
 Classifier: Operating System :: OS Independent
@@ -104,5 +103,3 @@ Thanks
 .. _tmdbsimple: https://github.com/celiao/tmdbsimple
 .. _BurntSushi: https://github.com/BurntSushi
 .. _pdoc: https://github.com/BurntSushi/pdoc
-
-

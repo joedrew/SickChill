@@ -13,8 +13,8 @@
 """ExtensionManager
 """
 
-import operator
 import logging
+import operator
 
 from . import _cache
 from .exception import NoMatches
@@ -57,21 +57,6 @@ class Extension(object):
         # Python 3.8 standard library does not.
         match = self.entry_point.pattern.match(self.entry_point.value)
         return match.group('module')
-
-    @property
-    def extras(self):
-        """The 'extras' settings for the plugin."""
-        # NOTE: The underlying package returns re.Match objects for
-        # some reason. Translate those to the matched strings, which
-        # seem more useful.
-        return [
-            # Python 3.6 returns _sre.SRE_Match objects. Later
-            # versions of python return re.Match objects. Both types
-            # have a 'string' attribute containing the text that
-            # matched the pattern.
-            getattr(e, 'string', e)
-            for e in self.entry_point.extras
-        ]
 
     @property
     def attr(self):
@@ -331,8 +316,7 @@ class ExtensionManager(object):
                 LOG.exception(err)
 
     def items(self):
-        """
-        Return an iterator of tuples of the form (name, extension).
+        """Return an iterator of tuples of the form (name, extension).
 
         This is analogous to the Mapping.items() method.
         """
@@ -356,6 +340,5 @@ class ExtensionManager(object):
         return self._extensions_by_name[name]
 
     def __contains__(self, name):
-        """Return true if name is in list of enabled extensions.
-        """
+        """Return true if name is in list of enabled extensions."""
         return any(extension.name == name for extension in self.extensions)

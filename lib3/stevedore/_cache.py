@@ -15,6 +15,7 @@
 import errno
 import glob
 import hashlib
+import importlib.metadata as importlib_metadata
 import itertools
 import json
 import logging
@@ -22,13 +23,6 @@ import os
 import os.path
 import struct
 import sys
-
-try:
-    # For python 3.8 and later
-    import importlib.metadata as importlib_metadata
-except ImportError:
-    # For everyone else
-    import importlib_metadata
 
 
 log = logging.getLogger('stevedore._cache')
@@ -62,7 +56,7 @@ def _get_mtime(name):
         s = os.stat(name)
         return s.st_mtime
     except OSError as err:
-        if err.errno != errno.ENOENT:
+        if err.errno not in {errno.ENOENT, errno.ENOTDIR}:
             raise
     return -1.0
 
@@ -72,8 +66,7 @@ def _ftobytes(f):
 
 
 def _hash_settings_for_path(path):
-    """Return a hash and the path settings that created it.
-    """
+    """Return a hash and the path settings that created it."""
     paths = []
     h = hashlib.sha256()
 
@@ -104,8 +97,17 @@ def _hash_settings_for_path(path):
     return (h.hexdigest(), paths)
 
 
-def _build_cacheable_data(path):
+def _build_cacheable_data():
     real_groups = importlib_metadata.entry_points()
+
+    if not isinstance(real_groups, dict):
+        # importlib-metadata 4.0 or later (or stdlib importlib.metadata in
+        # Python 3.9 or later)
+        real_groups = {
+            group: real_groups.select(group=group)
+            for group in real_groups.groups
+        }
+
     # Convert the namedtuple values to regular tuples
     groups = {}
     for name, group_data in real_groups.items():
@@ -117,7 +119,7 @@ def _build_cacheable_data(path):
             # package that provides entry points using tox, where the
             # package is installed in the virtualenv that tox builds
             # and is present in the path as '.'.
-            item = ep[:]  # convert namedtuple to tuple
+            item = ep.name, ep.value, ep.group  # convert to tuple
             if item in existing:
                 continue
             existing.add(item)
@@ -136,6 +138,14 @@ class Cache:
             cache_dir = _get_cache_dir()
         self._dir = cache_dir
         self._internal = {}
+        self._disable_caching = False
+
+        # Caching can be disabled by either placing .disable file into the
+        # target directory or when python executable is under /tmp (this is the
+        # case when executed from ansible)
+        if any([os.path.isfile(os.path.join(self._dir, '.disable')),
+                sys.executable[0:4] == '/tmp']):
+            self._disable_caching = True
 
     def _get_data_for_path(self, path):
         if path is None:
@@ -152,16 +162,17 @@ class Cache:
             with open(filename, 'r') as f:
                 data = json.load(f)
         except (IOError, json.JSONDecodeError):
-            data = _build_cacheable_data(path)
+            data = _build_cacheable_data()
             data['path_values'] = path_values
-            try:
-                log.debug('writing to %s', filename)
-                os.makedirs(self._dir, exist_ok=True)
-                with open(filename, 'w') as f:
-                    json.dump(data, f)
-            except (IOError, OSError):
-                # Could not create cache dir or write file.
-                pass
+            if not self._disable_caching:
+                try:
+                    log.debug('writing to %s', filename)
+                    os.makedirs(self._dir, exist_ok=True)
+                    with open(filename, 'w') as f:
+                        json.dump(data, f)
+                except (IOError, OSError):
+                    # Could not create cache dir or write file.
+                    pass
 
         self._internal[internal_key] = data
         return data

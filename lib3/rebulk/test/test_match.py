@@ -1,16 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# pylint: disable=no-self-use, pointless-statement, missing-docstring, unneeded-not, len-as-condition
+# pylint: disable=pointless-statement, missing-docstring, unneeded-not, len-as-condition
 
 import pytest
-import six
 
 from ..match import Match, Matches
 from ..pattern import StringPattern, RePattern
 from ..formatters import formatters
 
 
-class TestMatchClass(object):
+class TestMatchClass:
     def test_repr(self):
         match1 = Match(1, 3, value="es")
 
@@ -72,23 +71,18 @@ class TestMatchClass(object):
         assert match2 > match1
         assert match2 >= match1
 
-        if six.PY3:
-            with pytest.raises(TypeError):
-                match1 < other
+        with pytest.raises(TypeError):
+            match1 < other
 
-            with pytest.raises(TypeError):
-                match1 <= other
+        with pytest.raises(TypeError):
+            match1 <= other
 
-            with pytest.raises(TypeError):
-                match1 > other
+        with pytest.raises(TypeError):
+            match1 > other
 
-            with pytest.raises(TypeError):
-                match1 >= other
-        else:
-            assert match1 < other
-            assert match1 <= other
-            assert not match1 > other
-            assert not match1 >= other
+        with pytest.raises(TypeError):
+            match1 >= other
+
 
     def test_value(self):
         match1 = Match(1, 3)
@@ -97,7 +91,7 @@ class TestMatchClass(object):
         assert match1.value == "test"
 
 
-class TestMatchesClass(object):
+class TestMatchesClass:
     match1 = Match(0, 2, value="te", name="start")
     match2 = Match(2, 3, value="s", tags="tag1")
     match3 = Match(3, 4, value="t", tags=["tag1", "tag2"])
@@ -304,7 +298,7 @@ class TestMatchesClass(object):
         assert [split.value for split in splitted] == ["word1", "word2", "word3"]
 
 
-class TestMaches(object):
+class TestMaches:
     def test_names(self):
         input_string = "One Two Three"
 

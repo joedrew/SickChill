@@ -1,4 +1,4 @@
-# Copyright 2004-2019 Davide Alberani <da@erlug.linux.it>
+# Copyright 2004-2022 Davide Alberani <da@erlug.linux.it>
 #                2009 H. Turgut Uyar <uyar@tekir.org>
 #
 # This program is free software; you can redistribute it and/or modify
@@ -28,14 +28,11 @@ from copy import copy, deepcopy
 from functools import total_ordering
 from time import strftime, strptime
 
-from imdb import VERSION
 from imdb import linguistics
 from imdb._exceptions import IMDbParserError
 from imdb._logging import imdbpyLogger
 
-
 PY2 = sys.hexversion < 0x3000000
-
 
 # Logger for imdb.utils module.
 _utils_logger = imdbpyLogger.getChild('utils')
@@ -45,12 +42,12 @@ _utils_logger = imdbpyLogger.getChild('utils')
 # "imdbIndex" after the slash is used for movies with the same title
 # and year of release.
 # XXX: probably L, C, D and M are far too much! ;-)
-re_year_index = re.compile(r'\(([0-9\?]{4}(/[IVXLCDM]+)?)\)')
+re_year_index = re.compile(r'\(([0-9\?]{4}([–-]([0-9\?]{4})?\s?)?(/[IVXLCDM]+)?)\)')
 re_m_episode = re.compile(r'\(TV Episode\)\s+-\s+', re.I)
 re_m_series = re.compile(r'Season\s+(\d+)\s+\|\s+Episode\s+(\d+)\s+-', re.I)
 re_m_imdbIndex = re.compile(r'\(([IVXLCDM]+)\)')
 re_m_kind = re.compile(
-    r'\((TV episode|TV Series|TV mini-series|mini|TV|Video|Video Game|VG|Short|TV Movie|TV Short|V)\)',
+    r'\((TV episode|TV Series|TV mini[ -]series|mini|TV|Video|Video Game|VG|Short|TV Movie|TV Short|TV Special|V)\)',
     re.I
 )
 
@@ -61,7 +58,9 @@ KIND_MAP = {
     'video': 'video movie',
     'vg': 'video game',
     'mini': 'tv mini series',
-    'tv mini-series': 'tv mini series'
+    'tv mini-series': 'tv mini series',
+    'tv miniseries': 'tv mini series',
+    'tv special': 'tv special'
 }
 
 # Match only the imdbIndex (for name strings).
@@ -71,7 +70,7 @@ re_index = re.compile(r'^\(([IVXLCDM]+)\)$')
 re_parentheses = re.compile(r'(\(.*\))')
 
 # Match the number of episodes.
-re_episodes = re.compile('\s?\((\d+) episodes\)', re.I)
+re_episodes = re.compile(r'\s?\((\d+) episodes\)', re.I)
 re_episode_info = re.compile(
     r'{\s*(.+?)?\s?(\([0-9\?]{4}-[0-9\?]{1,2}-[0-9\?]{1,2}\))?\s?(\(#[0-9]+\.[0-9]+\))?}'
 )
@@ -315,7 +314,7 @@ def analyze_title(title, canonical=None, canonicalSeries=None, canonicalEpisode=
         canonicalSeries = canonicalEpisode = canonical
     original_t = title
     result = {}
-    title = title.split(' aka ')[0].strip()
+    title = title.split(' aka ')[0].strip().replace('""', '"')
     year = ''
     kind = ''
     imdbIndex = ''
@@ -434,7 +433,6 @@ def analyze_title(title, canonical=None, canonicalSeries=None, canonicalEpisode=
         else:
             title = normalizeTitle(title)
     result['title'] = title
-    result['kind'] = kind or 'movie'
     if year and year != '????':
         if '-' in year:
             result['series years'] = year
@@ -444,7 +442,7 @@ def analyze_title(title, canonical=None, canonicalSeries=None, canonicalEpisode=
         except (TypeError, ValueError):
             pass
     if imdbIndex:
-        result['imdbIndex'] = imdbIndex
+        result['imdbIndex'] = imdbIndex.strip()
     result['kind'] = kind or 'movie'
     return result
 
@@ -598,7 +596,7 @@ def analyze_company_name(name, stripNotes=False):
     name = name.strip()
     country = None
     if name.startswith('['):
-        name = re.sub('[!@#$\(\)\[\]]', '', name)
+        name = re.sub(r'[!@#$\(\)\[\]]', '', name)
     else:
         if name.endswith(']'):
             idx = name.rfind('[')
@@ -700,7 +698,7 @@ def cmpMovies(m1, m2):
         return 1
     m1id = getattr(m1, 'movieID', None)
     # Introduce this check even for other comparisons functions?
-    # XXX: is it safe to check without knowning the data access system?
+    # XXX: is it safe to check without knowing the data access system?
     #      probably not a great idea.  Check for 'kind', instead?
     if m1id is not None:
         m2id = getattr(m2, 'movieID', None)
@@ -1121,7 +1119,7 @@ def _seq2xml(seq, _l=None, withRefs=False, modFunct=None,
 
 
 _xmlHead = """<?xml version="1.0"?>
-<!DOCTYPE %s SYSTEM "https://imdbpy.github.io/static/dtd/imdbpy.dtd">
+<!DOCTYPE %s SYSTEM "https://cinemagoer.github.io/static/dtd/cinemagoer.dtd">
 
 """
 
@@ -1218,7 +1216,7 @@ class _Container(object):
             pass
         if not self._roleIsPerson:
             if not isinstance(roleID, (list, tuple)):
-                if not(PY2 and isinstance(self.currentRole, unicode)):
+                if not (PY2 and isinstance(self.currentRole, unicode)):
                     self.currentRole.characterID = roleID
             else:
                 for index, item in enumerate(roleID):
@@ -1283,7 +1281,7 @@ class _Container(object):
         if ext_idx == -1:
             return url
         if '@' in url:
-            return url[:url.rindex('@')+1] + url[ext_idx:]
+            return url[:url.rindex('@') + 1] + url[ext_idx:]
         else:
             prev_dot = url[:ext_idx].rfind('.')
             if prev_dot == -1:
@@ -1499,8 +1497,10 @@ class _Container(object):
         if value is not None:
             return value
         # Handle key aliases.
-        key = self.keys_alias.get(key, key)
-        rawData = self.data[key]
+        if key in self.keys_alias and self.keys_alias[key] in self.data:
+            rawData = self.data[self.keys_alias[key]]
+        else:
+            rawData = self.data[key]
         if key in self.keys_tomodify and \
                 self.modFunct not in (None, modNull):
             try:

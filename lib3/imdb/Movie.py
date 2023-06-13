@@ -24,8 +24,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 from copy import deepcopy
 
 from imdb import linguistics
-from imdb.utils import _Container
-from imdb.utils import analyze_title, build_title, canonicalTitle, cmpMovies, flatten
+from imdb.utils import _Container, analyze_title, build_title, canonicalTitle, cmpMovies, flatten
 
 
 class Movie(_Container):
@@ -50,6 +49,8 @@ class Movie(_Container):
         'plot summary': 'plot',
         'plot summaries': 'plot',
         'directed by': 'director',
+        'directors': 'director',
+        'writers': 'writer',
         'actors': 'cast',
         'actresses': 'cast',
         'aka': 'akas',
@@ -237,9 +238,9 @@ class Movie(_Container):
     def __contains__(self, item):
         """Return true if the given Person object is listed in this Movie,
         or if the the given Character is represented in this Movie."""
-        from .Person import Person
         from .Character import Character
         from .Company import Company
+        from .Person import Person
         if isinstance(item, Person):
             for p in flatten(self.data, yieldDictKeys=True, scalar=Person,
                              toDescend=(list, dict, tuple, Movie)):

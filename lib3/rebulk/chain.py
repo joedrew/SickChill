@@ -3,7 +3,6 @@
 """
 Chain patterns and handle repetiting capture group
 """
-# pylint: disable=super-init-not-called
 import itertools
 
 from .builder import Builder
@@ -17,7 +16,6 @@ class _InvalidChainException(Exception):
     """
     Internal exception raised when a chain is not valid
     """
-    pass
 
 
 class Chain(Pattern, Builder):
@@ -25,7 +23,7 @@ class Chain(Pattern, Builder):
     Definition of a pattern chain to search for.
     """
 
-    def __init__(self, parent, chain_breaker=None, **kwargs):
+    def __init__(self, parent, chain_breaker=None, **kwargs):  # pylint: disable=super-init-not-called
         Builder.__init__(self)
         call(Pattern.__init__, self, **kwargs)
         self._kwargs = kwargs
@@ -125,7 +123,7 @@ class Chain(Pattern, Builder):
         :rtype:
         """
         # pylint: disable=too-many-locals
-        ret = super(Chain, self)._process_match(match, match_index, child=child)
+        ret = super()._process_match(match, match_index, child=child)
         if ret:
             return True
 
@@ -144,7 +142,7 @@ class Chain(Pattern, Builder):
                     for last_match in last_matches:
                         match.children.remove(last_match)
                     match.end = match.children[-1].end if match.children else match.start
-                    ret = super(Chain, self)._process_match(match, match_index, child=child)
+                    ret = super()._process_match(match, match_index, child=child)
                     if ret:
                         return True
 
@@ -186,7 +184,7 @@ class Chain(Pattern, Builder):
 
     @staticmethod
     def _group_by_match_index(matches):
-        grouped_matches_dict = dict()
+        grouped_matches_dict = {}
         for match_index, match in itertools.groupby(matches, lambda m: m.match_index):
             grouped_matches_dict[match_index] = list(match)
         return grouped_matches_dict
@@ -202,8 +200,8 @@ class Chain(Pattern, Builder):
     def __repr__(self):
         defined = ""
         if self.defined_at:
-            defined = "@%s" % (self.defined_at,)
-        return "<%s%s:%s>" % (self.__class__.__name__, defined, self.parts)
+            defined = f"@{self.defined_at}"
+        return f"<{self.__class__.__name__}{defined}:{self.parts}>"
 
 
 class ChainPart(BasePattern):
@@ -259,7 +257,7 @@ class ChainPart(BasePattern):
     def _validate_repeater(self, matches):
         max_match_index = -1
         if matches:
-            max_match_index = max([m.match_index for m in matches])
+            max_match_index = max(m.match_index for m in matches)
         if max_match_index + 1 < self.repeater_start:
             raise _InvalidChainException
 
@@ -377,4 +375,4 @@ class ChainPart(BasePattern):
         return self
 
     def __repr__(self):
-        return "%s({%s,%s})" % (self.pattern, self.repeater_start, self.repeater_end)
+        return f"{self.pattern}({{{self.repeater_start},{self.repeater_end}}})"

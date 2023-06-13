@@ -1,4 +1,4 @@
-# Copyright 2004-2020 Davide Alberani <da@erlug.linux.it>
+# Copyright 2004-2021 Davide Alberani <da@erlug.linux.it>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,9 +21,10 @@ the IMDb web pages, or a SQL database.
 """
 
 from __future__ import absolute_import, division, print_function, unicode_literals
+
 from imdb.version import __version__
 
-__all__ = ['IMDb', 'IMDbError', 'Movie', 'Person', 'Character', 'Company',
+__all__ = ['Cinemagoer', 'IMDb', 'IMDbError', 'Movie', 'Person', 'Character', 'Company',
            'available_access_systems']
 
 VERSION = __version__
@@ -32,11 +33,11 @@ VERSION = __version__
 import os
 import sys
 from pkgutil import find_loader
-from types import MethodType, FunctionType
+from types import FunctionType, MethodType
 
-from imdb._logging import imdbpyLogger as _imdb_logger
-from imdb._exceptions import IMDbDataAccessError, IMDbError
 from imdb import Character, Company, Movie, Person
+from imdb._exceptions import IMDbDataAccessError, IMDbError
+from imdb._logging import imdbpyLogger as _imdb_logger
 from imdb.utils import build_company_name, build_name, build_title
 
 PY2 = sys.hexversion < 0x3000000
@@ -77,13 +78,13 @@ imdbURL_keyword_main = imdbURL_base + 'search/keyword/?keywords=%s'
 imdbURL_top250 = imdbURL_base + 'chart/top'
 # http://www.imdb.com/chart/bottom
 imdbURL_bottom100 = imdbURL_base + 'chart/bottom'
-# http://www.imdb.com/find?%s
-imdbURL_find = imdbURL_base + 'find?%s'
+# http://www.imdb.com/find/?%s
+imdbURL_find = imdbURL_base + 'find/?%s'
 # http://www.imdb.com/list/
 imdbURL_list_base = imdbURL_base + 'list/'
 
-# Name of the configuration file.
-confFileName = 'imdbpy.cfg'
+# Name of the configuration files.
+confFileNames = ['cinemagoer.cfg', 'imdbpy.cfg']
 
 
 class ConfigParserWithCase(configparser.ConfigParser):
@@ -98,20 +99,21 @@ class ConfigParserWithCase(configparser.ConfigParser):
         else:
             super(configparser.ConfigParser, self).__init__(defaults=defaults)
         if confFile is None:
-            dotFileName = '.' + confFileName
-            # Current and home directory.
-            confFile = [os.path.join(os.getcwd(), confFileName),
-                        os.path.join(os.getcwd(), dotFileName),
-                        os.path.join(os.path.expanduser('~'), confFileName),
-                        os.path.join(os.path.expanduser('~'), dotFileName)]
-            if os.name == 'posix':
-                sep = getattr(os.path, 'sep', '/')
-                # /etc/ and /etc/conf.d/
-                confFile.append(os.path.join(sep, 'etc', confFileName))
-                confFile.append(os.path.join(sep, 'etc', 'conf.d', confFileName))
-            else:
-                # etc subdirectory of sys.prefix, for non-unix systems.
-                confFile.append(os.path.join(sys.prefix, 'etc', confFileName))
+            for confFileName in confFileNames:
+                dotFileName = '.' + confFileName
+                # Current and home directory.
+                confFile = [os.path.join(os.getcwd(), confFileName),
+                            os.path.join(os.getcwd(), dotFileName),
+                            os.path.join(os.path.expanduser('~'), confFileName),
+                            os.path.join(os.path.expanduser('~'), dotFileName)]
+                if os.name == 'posix':
+                    sep = getattr(os.path, 'sep', '/')
+                    # /etc/ and /etc/conf.d/
+                    confFile.append(os.path.join(sep, 'etc', confFileName))
+                    confFile.append(os.path.join(sep, 'etc', 'conf.d', confFileName))
+                else:
+                    # etc subdirectory of sys.prefix, for non-unix systems.
+                    confFile.append(os.path.join(sys.prefix, 'etc', confFileName))
         for fname in confFile:
             try:
                 self.read(fname)
@@ -179,7 +181,7 @@ def IMDb(accessSystem=None, *arguments, **keywords):
             # the 'http' accessSystem.
             accessSystem = 'http'
     if 'loggingLevel' in keywords:
-        imdb._logging.setLevel(keywords['loggingLevel'])
+        _imdb_logger.setLevel(keywords['loggingLevel'])
         del keywords['loggingLevel']
     if 'loggingConfig' in keywords:
         logCfg = keywords['loggingConfig']
@@ -203,6 +205,10 @@ def IMDb(accessSystem=None, *arguments, **keywords):
         return IMDbSqlAccessSystem(*arguments, **keywords)
     else:
         raise IMDbError('unknown kind of data access system: "%s"' % accessSystem)
+
+
+# Cinemagoer alias
+Cinemagoer = IMDb
 
 
 def available_access_systems():
@@ -263,7 +269,7 @@ class IMDbBase:
         if keywordsResults < 1:
             keywordsResults = 100
         self._keywordsResults = keywordsResults
-        self._reraise_exceptions = keywords.get('reraiseExceptions') or False
+        self._reraise_exceptions = keywords.get('reraiseExceptions', True)
         self.set_imdb_urls(keywords.get('imdbURL_base') or imdbURL_base)
 
     def set_imdb_urls(self, imdbURL_base):
@@ -303,12 +309,16 @@ class IMDbBase:
         imdbURL_toptv250 = imdbURL_base + 'chart/toptv'
         # https://www.imdb.com/india/top-rated-indian-movies
         imdbURL_topindian250 = imdbURL_base + 'india/top-rated-indian-movies'
-        # http://www.imdb.com/find?%s
-        imdbURL_find = imdbURL_base + 'find?%s'
+        # http://www.imdb.com/chart/boxoffice/
+        imdbURL_boxoffice = imdbURL_base + 'chart/boxoffice/'
+        # http://www.imdb.com/find/?%s
+        imdbURL_find = imdbURL_base + 'find/?%s'
         # http://www.imdb.com/search/title?%s
         imdbURL_search_movie_advanced = imdbURL_base + 'search/title/?%s'
         # http://www.imdb.com/list/
         imdbURL_list_base = imdbURL_base + 'list/'
+        # https://www.imdb.com/showtimes
+        imdbURL_showtimes = imdbURL_base + 'showtimes'
         self.urls = dict(
             movie_base=imdbURL_movie_base,
             movie_main=imdbURL_movie_main,
@@ -327,7 +337,9 @@ class IMDbBase:
             topindian250=imdbURL_topindian250,
             find=imdbURL_find,
             movie_list=imdbURL_list_base,
-            search_movie_advanced=imdbURL_search_movie_advanced)
+            search_movie_advanced=imdbURL_search_movie_advanced,
+            boxoffice=imdbURL_boxoffice,
+            showtimes=imdbURL_showtimes)
 
     def _normalize_movieID(self, movieID):
         """Normalize the given movieID."""
@@ -440,7 +452,7 @@ class IMDbBase:
             res = self._search_episode(title, results)
         return [Movie.Movie(movieID=self._get_real_movieID(mi),
                 data=md, modFunct=self._defModFunct,
-                accessSystem=self.accessSystem) for mi, md in res][:results]
+                accessSystem=self.accessSystem) for mi, md in res if mi and md][:results]
 
     def _get_movie_list(self, list_, results):
         """Return a list of tuples (movieID, {movieData})"""
@@ -453,7 +465,7 @@ class IMDbBase:
         res = self._get_movie_list(list_, results)
         return [Movie.Movie(movieID=self._get_real_movieID(mi),
                 data=md, modFunct=self._defModFunct,
-                accessSystem=self.accessSystem) for mi, md in res][:results]
+                accessSystem=self.accessSystem) for mi, md in res if mi and md][:results]
 
     def _search_movie_advanced(self, title=None, adult=None, results=None, sort=None, sort_dir=None):
         """Return a list of tuples (movieID, {movieData})"""
@@ -473,7 +485,7 @@ class IMDbBase:
         res = self._search_movie_advanced(title=title, adult=adult, results=results, sort=sort, sort_dir=sort_dir)
         return [Movie.Movie(movieID=self._get_real_movieID(mi),
                 data=md, modFunct=self._defModFunct,
-                accessSystem=self.accessSystem) for mi, md in res][:results]
+                accessSystem=self.accessSystem) for mi, md in res if mi and md][:results]
 
     def _search_episode(self, title, results):
         """Return a list of tuples (movieID, {movieData})"""
@@ -526,7 +538,7 @@ class IMDbBase:
         res = self._search_person(name, results)
         return [Person.Person(personID=self._get_real_personID(pi),
                 data=pd, modFunct=self._defModFunct,
-                accessSystem=self.accessSystem) for pi, pd in res][:results]
+                accessSystem=self.accessSystem) for pi, pd in res if pi and pd][:results]
 
     def get_character(self, characterID, info=Character.Character.default_info,
                       modFunct=None):
@@ -569,7 +581,7 @@ class IMDbBase:
         res = self._search_character(name, results)
         return [Character.Character(characterID=self._get_real_characterID(pi),
                 data=pd, modFunct=self._defModFunct,
-                accessSystem=self.accessSystem) for pi, pd in res][:results]
+                accessSystem=self.accessSystem) for pi, pd in res if pi and pd][:results]
 
     def get_company(self, companyID, info=Company.Company.default_info,
                     modFunct=None):
@@ -611,7 +623,7 @@ class IMDbBase:
         res = self._search_company(name, results)
         return [Company.Company(companyID=self._get_real_companyID(pi),
                 data=pd, modFunct=self._defModFunct,
-                accessSystem=self.accessSystem) for pi, pd in res][:results]
+                accessSystem=self.accessSystem) for pi, pd in res if pi and pd][:results]
 
     def _search_keyword(self, keyword, results):
         """Return a list of 'keyword' strings."""
@@ -698,6 +710,55 @@ class IMDbBase:
                 data=md, modFunct=self._defModFunct,
                 accessSystem=self.accessSystem) for mi, md in res]
 
+    def get_boxoffice_movies(self):
+        """Return the list of the top box office movies."""
+        res = self._get_top_bottom_movies('boxoffice')
+        return [Movie.Movie(movieID=self._get_real_movieID(mi),
+                            data=md, modFunct=self._defModFunct,
+                            accessSystem=self.accessSystem) for mi, md in res]
+
+    def _get_top_movies_or_tv_by_genres(self, genres, filter_content):
+        """Return a list of tuples (movieID, {movieData})"""
+        # XXX: for the real implementation, see the method of the
+        #      subclass, somewhere under the imdb.parser package.
+        raise NotImplementedError('override this method')
+
+    def get_top50_movies_by_genres(self, genres):
+        """Return the list of the top 50 movies by genres.
+
+        :sig: (Union[str, List[str]]) -> List
+        :param genres: Name genre or list of genre's names."""
+        if isinstance(genres, list):
+            genres = ','.join(map(str, genres))
+        movies_filter = '&title_type=feature'
+        res = self._get_top_movies_or_tv_by_genres(genres, movies_filter)
+        return [Movie.Movie(movieID=self._get_real_movieID(mi),
+                            data=md, modFunct=self._defModFunct,
+                            accessSystem=self.accessSystem) for mi, md in res]
+
+    def get_top50_tv_by_genres(self, genres):
+        """Return the list of the top 50 tv series and mini series by genres.
+
+        :sig: (Union[str, List[str]]) -> List
+        :param genres: Name genre or list of genre's names."""
+        if isinstance(genres, list):
+            genres = ','.join(map(str, genres))
+        tv_filter = '&title_type=tv_series,mini_series'
+        res = self._get_top_movies_or_tv_by_genres(genres, tv_filter)
+        return [Movie.Movie(movieID=self._get_real_movieID(mi),
+                            data=md, modFunct=self._defModFunct,
+                            accessSystem=self.accessSystem) for mi, md in res]
+
+    def _get_showtimes(self):
+        # XXX: for the real implementation, see the method of the
+        #      subclass, somewhere under the imdb.parser package.
+        raise NotImplementedError('override this method')
+
+    def get_showtimes(self):
+        """Return a list of objects like this:
+        [{'cinema': 'Cinema Name', 'address and contacts': '...',
+          'movies': [{'movie': MovieObject, 'showtimes': 'showtimes info'}}, ...]"""
+        return self._get_showtimes()
 
     def new_movie(self, *arguments, **keywords):
         """Return a Movie object."""

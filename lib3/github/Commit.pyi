@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Union
 
+from github.CheckRun import CheckRun
+from github.CheckSuite import CheckSuite
 from github.CommitCombinedStatus import CommitCombinedStatus
 from github.CommitComment import CommitComment
 from github.CommitStats import CommitStats
@@ -9,6 +11,7 @@ from github.GitCommit import GitCommit
 from github.GithubObject import CompletableGithubObject, _NotSetType
 from github.NamedUser import NamedUser
 from github.PaginatedList import PaginatedList
+from github.PullRequest import PullRequest
 
 class Commit(CompletableGithubObject):
     def __repr__(self) -> str: ...
@@ -40,9 +43,21 @@ class Commit(CompletableGithubObject):
     ) -> CommitStatus: ...
     @property
     def files(self) -> List[File]: ...
+    def get_check_suites(
+        self,
+        app_id: Union[_NotSetType, int],
+        check_name: Union[_NotSetType, str],
+    ) -> PaginatedList[CheckSuite]: ...
     def get_combined_status(self) -> CommitCombinedStatus: ...
-    def get_comments(self) -> PaginatedList[GitCommit]: ...
+    def get_comments(self) -> PaginatedList[CommitComment]: ...
     def get_statuses(self) -> PaginatedList[CommitStatus]: ...
+    def get_pulls(self) -> PaginatedList[PullRequest]: ...
+    def get_check_runs(
+        self,
+        check_name: Union[_NotSetType, str] = ...,
+        status: Union[_NotSetType, str] = ...,
+        filter: Union[_NotSetType, str] = ...,
+    ) -> PaginatedList[CheckRun]: ...
     @property
     def html_url(self) -> str: ...
     @property

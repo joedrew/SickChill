@@ -1,4 +1,4 @@
-# Copyright 2004-2019 Davide Alberani <da@erlug.linux.it>
+# Copyright 2004-2022 Davide Alberani <da@erlug.linux.it>
 #           2008-2018 H. Turgut Uyar <uyar@tekir.org>
 #
 # This program is free software; you can redistribute it and/or modify
@@ -27,14 +27,12 @@ import re
 from imdb import PY2
 from imdb.Character import Character
 from imdb.Movie import Movie
+from imdb.parser.http.logging import logger
 from imdb.Person import Person
 from imdb.utils import _Container, flatten
-from imdb.parser.http.logging import logger
 
-from .piculet import _USE_LXML, ElementTree, Rules, build_tree, html_to_xhtml
+from .piculet import _USE_LXML, ElementTree, Path, Rule, Rules, build_tree, html_to_xhtml
 from .piculet import xpath as piculet_xpath
-from .piculet import Rule, Path
-
 
 if PY2:
     from collections import Callable
@@ -48,7 +46,7 @@ re_yearKind_index = re.compile(
 )
 
 # Match imdb ids in href tags
-re_imdbid = re.compile(r'(title/tt|name/nm|company/co|user/ur)([0-9]+)')
+re_imdbid = re.compile(r'(title/tt|name/nm|company/co|companies=co|user/ur)([0-9]+)')
 
 
 def analyze_imdbid(href):
@@ -350,13 +348,13 @@ def build_movie(txt, movieID=None, roleID=None, status=None,
               roleID=roleID, roleIsPerson=_parsingCharacter,
               modFunct=modFunct, accessSystem=accessSystem)
     if additionalNotes:
-        if '(TV Series)' in additionalNotes:
+        if 'TV Series' in additionalNotes:
             m['kind'] = 'tv series'
-        elif '(Video Game)' in additionalNotes:
+        elif 'Video Game' in additionalNotes:
             m['kind'] = 'video game'
-        elif '(TV Movie)' in additionalNotes:
+        elif 'TV Movie' in additionalNotes:
             m['kind'] = 'tv movie'
-        elif '(TV Short)' in additionalNotes:
+        elif 'TV Short' in additionalNotes:
             m['kind'] = 'tv short'
     if roleNotes and len(roleNotes) == len(roleID):
         for idx, role in enumerate(m.currentRole):

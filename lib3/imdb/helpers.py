@@ -17,18 +17,19 @@
 
 """
 This module provides functions not used directly by the imdb package,
-but useful for IMDbPY-based programs.
+but useful for Cinemagoer-based programs.
 """
 
 # XXX: Find better names for the functions in this module.
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-import sys
 import difflib
 import gettext
 import re
-from gettext import gettext as _
+import sys
+
+from imdb.locale import _
 
 PY2 = sys.hexversion < 0x3000000
 if PY2:
@@ -39,14 +40,13 @@ else:
 # The modClearRefs can be used to strip names and titles references from
 # the strings in Movie and Person objects.
 from imdb import IMDb, imdbURL_character_base, imdbURL_movie_base, imdbURL_person_base
+from imdb._exceptions import IMDbError
 from imdb.Character import Character
 from imdb.Company import Company
 from imdb.linguistics import COUNTRY_LANG
 from imdb.Movie import Movie
 from imdb.Person import Person
-from imdb.utils import _tagAttr, re_characterRef, re_nameRef, re_titleRef
-from imdb.utils import TAGS_TO_MODIFY
-
+from imdb.utils import TAGS_TO_MODIFY, _tagAttr, re_characterRef, re_nameRef, re_titleRef
 
 gettext.textdomain('imdbpy')
 
@@ -302,7 +302,7 @@ def sortedEpisodes(m, season=None):
 
 
 # Idea and portions of the code courtesy of none none (dclist at gmail.com)
-_re_imdbIDurl = re.compile(r'\b(nm|tt|ch|co)([0-9]{7})\b')
+_re_imdbIDurl = re.compile(r'\b(nm|tt|ch|co)([0-9]{7,8})\b')
 
 
 def get_byURL(url, info=None, args=None, kwds=None):
@@ -528,7 +528,7 @@ def parseXML(xml):
 
 
 _re_akas_lang = re.compile('(?:[(])([a-zA-Z]+?)(?: title[)])')
-_re_akas_country = re.compile('\(.*?\)')
+_re_akas_country = re.compile(r'\(.*?\)')
 
 
 # akasLanguages, sortAKAsBySimilarity and getAKAsInLanguage code
@@ -607,13 +607,23 @@ def getAKAsInLanguage(movie, lang, _searchedTitle=None):
     return akas
 
 
-def resizeImage(image, width=None, height=None, crop=None):
+def resizeImage(image, width=None, height=None, crop=None, custom_regex=None):
     """Return resized and cropped image url."""
 
-    regexString = r'https://m.media-amazon.com/images/\w/\w+'
+    regexString = custom_regex if custom_regex else r'https://m.media-amazon.com/images/\w/\w+'
 
-    resultImage = re.findall(regexString, image)[0]
-    resultImage += '@._V1_'
+    try:
+        resultImage = re.findall(regexString, image)[0]
+    except IndexError:
+        raise IMDbError('Image url not matched. Original url: "%s"' % (image))
+
+    if "@@" in image:
+        resultImage += '@'
+
+    if "@" not in image:
+        resultImage += '._V1_'
+    else:
+        resultImage += '@._V1_'
 
     if width:
         resultImage += 'SX%s_' % width

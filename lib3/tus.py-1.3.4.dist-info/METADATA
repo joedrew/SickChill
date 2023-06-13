@@ -5,7 +5,6 @@ Summary: tus (resumable file upload protocol) client
 Home-page: https://github.com/cenk/tus.py
 Author: Cenk Altı
 Author-email: cenkalti@gmail.com
-License: UNKNOWN
 Platform: any
 Classifier: Development Status :: 5 - Production/Stable
 Classifier: Intended Audience :: Developers
@@ -18,7 +17,4 @@ Classifier: Programming Language :: Python :: 3.5
 Classifier: Programming Language :: Python :: 3.6
 Classifier: Topic :: Internet :: WWW/HTTP
 Requires-Dist: requests
-
-UNKNOWN
-
 

@@ -6,13 +6,11 @@ Introspect rebulk object to retrieve capabilities.
 from abc import ABCMeta, abstractmethod
 from collections import defaultdict
 
-import six
 from .pattern import StringPattern, RePattern, FunctionalPattern
 from .utils import extend_safe
 
 
-@six.add_metaclass(ABCMeta)
-class Description(object):
+class Description(metaclass=ABCMeta):
     """
     Abstract class for a description.
     """
@@ -24,7 +22,6 @@ class Description(object):
         :return: all properties that described object can generate grouped by name.
         :rtype: dict
         """
-        pass
 
 
 class PatternDescription(Description):
